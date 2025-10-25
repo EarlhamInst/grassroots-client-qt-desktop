@@ -29,17 +29,11 @@
 #include <arpa/inet.h>
 #endif
 
-#include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 
 
-#include "json_tools.h"
-#include "json_util.h"
-#include "request_tools.h"
-#include "parameter_set.h"
 #include "client.h"
-#include "byte_buffer.h"
 #include "connection.h"
 #include "string_utils.h"
 #include "streams.h"
