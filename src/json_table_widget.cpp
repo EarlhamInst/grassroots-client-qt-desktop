@@ -11,6 +11,9 @@ JSONTableWidget :: JSONTableWidget (JSONParameter * const param_p, QTParameterWi
 	: BaseTableWidget (& (param_p -> jp_base_param), parent_p)
 {
 	jtw_param_p = param_p;
+
+	SetWidgetEnabled (! (jtw_param_p -> jp_base_param.pa_read_only_flag));
+
 }
 
 

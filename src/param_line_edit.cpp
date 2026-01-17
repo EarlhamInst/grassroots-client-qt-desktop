@@ -56,7 +56,7 @@ void ParamLineEdit :: SetUpdateOnEdit (bool b)
 {
 	if (b)
 		{
-            QObject ::  connect (ple_text_box_p,  &QLineEdit :: textChanged, this, &ParamLineEdit :: UpdateParameterValue);
+			QObject ::  connect (ple_text_box_p,  &QLineEdit :: textChanged, this, &ParamLineEdit :: UpdateParameterValue);
 		}
 	else
 		{

@@ -23,6 +23,9 @@ public:
 
 	virtual void Clear ();
 
+	virtual void SetWidgetEnabled (const bool enabled_flag);
+
+
 	bool SetColumnHeaders (Parameter *param_p);
 
 	bool AddColumnHeader (const char * const header_s);

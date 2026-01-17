@@ -217,6 +217,15 @@ bool BaseTableWidget :: SetColumnHeader (int col, const char * const name_s, con
 }
 
 
+void BaseTableWidget :: SetWidgetEnabled (const bool enabled_flag)
+{
+	if (ptw_table_p -> isEnabled () != enabled_flag)
+		{
+			ptw_table_p -> setEnabled (enabled_flag);
+		}
+}
+
+
 
 bool BaseTableWidget :: SetColumnHeaders (Parameter *param_p)
 {
