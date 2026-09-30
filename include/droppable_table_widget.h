@@ -39,6 +39,9 @@ public:
 	bool SetValueFromText (const char *data_s);
 
 
+	void AddCell (const int row, const int col, const char * const value_s);
+
+
 protected:
 	virtual void dragEnterEvent (QDragEnterEvent *event_p);
 

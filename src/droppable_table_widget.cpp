@@ -354,74 +354,168 @@ char *DroppableTableWidget :: GetEntry (const char *start_s, const char *end_s)
 
 
 
+// Parses a single row of CSV, handling quotes and embedded commas.
+// Modifies the input string 'line' in-place by inserting null-terminators.
+void parse_csv_row(char *line) {
+    bool in_quotes = false;
+    char *p = line;
+    char *cell_start = line;
+
+    while (*p != '\0' && *p != '\r' && *p != '\n') {
+        if (*p == '"') {
+            // Check for escaped double quotes ("") inside a quoted field
+            if (in_quotes && *(p + 1) == '"') {
+                p++; // Skip the first quote, treat second as literal
+            } else {
+                in_quotes = !in_quotes; // Toggle quote state
+            }
+        } else if (*p == ',' && !in_quotes) {
+            // End of cell found
+            *p = '\0'; // Null-terminate the current cell in-place
+            printf("Cell: %s\n", cell_start);
+            cell_start = p + 1; // Move to the start of the next cell
+        }
+        p++;
+    }
+
+    // Print the last cell in the row
+    printf("Cell: %s\n", cell_start);
+}
+
+
 void DroppableTableWidget :: SetRow (const int row, const char *data_s)
 {
 	const char *current_token_s = data_s;
-	const char *next_token_s;
+	const char *next_token_s = current_token_s;
 	int col = 0;
 	bool loop_flag = true;
 	bool in_quotes_flag = false;
+	const char *quotes_start_p = nullptr;
+	const char *quotes_end_p = nullptr;
 
 	if (row >= rowCount ())
 		{
 			setRowCount (row + 1);
 		}
 
-	while (loop_flag)
+
+	while ((*current_token_s != '\0') && (*current_token_s != '\r') && (*current_token_s != '\n'))
+  	{
+  		if (*current_token_s == '"')
+  			{
+  				// Check for escaped double quotes ("") inside a quoted field
+          if ((in_quotes_flag) && (* (current_token_s + 1) == '"'))
+          	{
+          		++ current_token_s; // Skip the first quote, treat second as literal
+          	}
+          else
+          	{
+          		// Toggle quote state
+          		if (in_quotes_flag)
+          			{
+          				quotes_end_p = current_token_s;
+          				in_quotes_flag = false;
+          			}
+          		else
+          			{
+          				quotes_start_p = current_token_s;
+          				in_quotes_flag = true;
+          			}
+
+          	}
+  			}
+  		else if ((*current_token_s == dtw_column_delimiter) && (!in_quotes_flag))
+  			{
+  				// End of cell found
+  				char start;
+  				char end;
+
+  				/* Temporarily null-terminate the current cell */
+  				if (quotes_start_p && quotes_end_p)
+  					{
+  						next_token_s = quotes_start_p + 1;
+  						end = *quotes_end_p;
+  						* (char *) quotes_end_p = '\0';
+  					}
+  				else
+  					{
+  						end = *current_token_s;
+  						* (char *) current_token_s = '\0';
+  					}
+
+  				AddCell (row, col, next_token_s);
+  				++ col;
+
+
+  				/* reset the current character to its original value */
+  				if (quotes_start_p && quotes_end_p)
+  					{
+  	          * (char *) quotes_end_p = end;
+  					}
+  				else
+  					{
+  						* (char *) current_token_s = end;
+  					}
+
+  				quotes_start_p = nullptr;
+  				quotes_end_p = nullptr;
+
+
+  				next_token_s = current_token_s + 1; // Move to the start of the next cell
+  			}
+
+  		++ current_token_s;
+  	}
+
+
+  // Add the last cell in the row
+
+	if ((quotes_start_p = strchr (next_token_s, '\"')) != nullptr)
 		{
-			char *value_s = nullptr;
-
-			if (*current_token_s != dtw_column_delimiter)
+			if ((quotes_end_p = strchr (quotes_start_p + 1, '\"')) != nullptr)
 				{
-					next_token_s = strchr (current_token_s, dtw_column_delimiter);
+					char end = *quotes_end_p;
+					* (char *) quotes_end_p = '\0';
 
-					if (next_token_s)
-						{
-							value_s = GetEntry (current_token_s, next_token_s);
+					AddCell (row, col, quotes_start_p + 1);
 
-							if (!value_s)
-								{
-									value_s = CopyToNewString (current_token_s, next_token_s - current_token_s, false);
-								}
+					* (char *) quotes_end_p = end;
 
-							current_token_s = next_token_s + 1;
-						}
-					else
-						{
-							value_s = GetEntry (current_token_s, nullptr);
-							loop_flag = false;
-						}
+
+					++ col;
 				}
-			else
-				{
-					++ current_token_s;
-				}
-
-			QTableWidgetItem *item_p = item (row, col);
-
-			if (item_p)
-				{
-					item_p -> setText (value_s);
-				}
-			else
-				{
-					item_p = new QTableWidgetItem (value_s);
-
-					if (col >= columnCount ())
-						{
-							setColumnCount (col + 1);
-						}
-
-
-					setItem (row, col, item_p);
-				}
-
-			//qDebug () << "num rows " << rowCount () << " num cols " << columnCount ();
-
+		}
+	else
+		{
+			AddCell (row, col, next_token_s);
 			++ col;
+		}
 
-			FreeCopiedString (value_s);
-		}		/* while (loop_flag) */
+
+}
+
+
+void DroppableTableWidget :: AddCell (const int row, const int col, const char * const value_s)
+{
+	QTableWidgetItem *item_p = item (row, col);
+
+	if (item_p)
+		{
+			item_p -> setText (value_s);
+		}
+	else
+		{
+			item_p = new QTableWidgetItem (value_s);
+
+			if (col >= columnCount ())
+				{
+					setColumnCount (col + 1);
+				}
+
+
+			setItem (row, col, item_p);
+		}
+
 }
 
 
