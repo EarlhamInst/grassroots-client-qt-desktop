@@ -345,6 +345,14 @@ void MainWindow :: RunServices (bool run_flag)
 
 			if (client_params_p)
 				{
+                char *services_json_s = json_dumps (client_params_p, JSON_INDENT (2));
+
+                if (services_json_s)
+                {
+                    printf ("RunServices () sending: %s\n", services_json_s);
+                    free (services_json_s);
+                }
+
 					RunService (client_params_p);
 
 					json_decref (client_params_p);
