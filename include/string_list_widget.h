@@ -57,6 +57,8 @@ private:
 
 	void SelectAllEntries (const bool selected_flag);
 
+	static QByteArray GetItemValue (const QListWidgetItem *item_p);
+
 private slots:
 	bool UpdateConfigValue (char ** const values_ss, const size_t num_values);
 

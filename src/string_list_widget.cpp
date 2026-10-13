@@ -7,6 +7,7 @@
 
 #include "string_list_widget.h"
 #include "string_parameter.h"
+#include "string_utils.h"
 
 
 
@@ -207,20 +208,20 @@ bool StringListWidget :: SetValueFromText (const char *value_s)
 
 			const qsizetype num_values = entries.size ();
 
-			QMap <QString, QString> map;
+			QSet <QByteArray> selected_values;
 
 			for (qsizetype i = 0; i < num_values; ++ i)
 				{
-					QString s = entries.at (i);
-					map.insert (s, s);
+					selected_values.insert (entries.at (i).toUtf8 ());
 				}
 
 			const int num_entries = slw_list_p -> count ();
 
 			for (int i = 0; i < num_entries; ++ i)
 				{
-					QString s = slw_list_p -> item (i) -> text ();
-					slw_list_p -> item (i) -> setSelected (map.contains (s));
+					QListWidgetItem *item_p = slw_list_p -> item (i);
+
+					item_p -> setSelected (selected_values.contains (GetItemValue (item_p)));
 				}
 
 		}
@@ -244,6 +245,16 @@ void StringListWidget :: SelectAllEntries (const bool selected_flag)
 }
 
 
+/*
+ * Each item's text is its option's description, the option's value
+ * is stored as the item's data and is what we send to the server.
+ */
+QByteArray StringListWidget :: GetItemValue (const QListWidgetItem *item_p)
+{
+	return item_p -> data (Qt :: UserRole).toByteArray ();
+}
+
+
 bool StringListWidget :: SetValueFromJSON (const json_t * const value_p)
 {
 	bool success_flag = false;
@@ -253,19 +264,24 @@ bool StringListWidget :: SetValueFromJSON (const json_t * const value_p)
 			size_t i;
 			json_t *entry_p;
 
+			const int num_entries = slw_list_p -> count ();
+
 			SelectAllEntries (false);
 
 			json_array_foreach (value_p, i, entry_p)
 				{
 				if (json_is_string (entry_p))
 					{
-						const char *entry_s = json_string_value (entry_p);
-						QList <QListWidgetItem *> l = slw_list_p -> findItems (entry_s, Qt :: MatchFixedString);
+						const QByteArray entry (json_string_value (entry_p));
 
-						for (qsizetype j = 0; j < l.count (); ++ j)
+						for (int j = 0; j < num_entries; ++ j)
 							{
-								QListWidgetItem *item_p = l.at (j);
-								item_p -> setSelected (true);
+								QListWidgetItem *item_p = slw_list_p -> item (j);
+
+								if (GetItemValue (item_p) == entry)
+									{
+										item_p -> setSelected (true);
+									}
 							}
 
 					}
@@ -313,7 +329,7 @@ bool StringListWidget :: StoreParameterValue (bool refresh_flag)
 
 			if (values_ss)
 				{
-					FreeMemory (values_ss);
+					FreeStringArray (values_ss, num_values);
 				}
 		}
 
@@ -334,7 +350,7 @@ bool StringListWidget :: UpdateConfigValue (char ** const values_ss, const size_
 bool StringListWidget :: GetValues (char *** values_sss, size_t *num_values_p)
 {
 	bool success_flag = false;
-	QStringList values;
+	QList <QByteArray> values;
 	const int num_entries = slw_list_p -> count ();
 	int num_values;
 
@@ -344,8 +360,7 @@ bool StringListWidget :: GetValues (char *** values_sss, size_t *num_values_p)
 
 			if (item_p -> isSelected ())
 				{
-					QString s = item_p -> text ();
-					values.append (s);
+					values.append (GetItemValue (item_p));
 				}
 		}
 
@@ -357,16 +372,32 @@ bool StringListWidget :: GetValues (char *** values_sss, size_t *num_values_p)
 				{
 					char **result_ss = results_ss;
 
+					success_flag = true;
+
+					/*
+					 * Copy each value as the QByteArray's data is only valid
+					 * whilst the QByteArray is in scope.
+					 */
 					for (qsizetype i = 0; i < num_values; ++ i, ++ result_ss)
 						{
-							QString s = values.at (i);
-							QByteArray ba = s.toLocal8Bit ();
-							*result_ss = ba.data ();
+							*result_ss = EasyCopyToNewString (values.at (i).constData ());
+
+							if (! (*result_ss))
+								{
+									success_flag = false;
+									i = num_values;		/* force exit from loop */
+								}
 						}
 
-					*values_sss = results_ss;
-					*num_values_p = num_values;
-					success_flag = true;
+					if (success_flag)
+						{
+							*values_sss = results_ss;
+							*num_values_p = num_values;
+						}
+					else
+						{
+							FreeStringArray (results_ss, num_values);
+						}
 				}
 		}
 	else

@@ -188,13 +188,19 @@ json_t *RepeatableParamGroupBox :: GetParametersAsJSON ()
 
 																			if (param_values_p)
 																				{
-																					if (json_array_append (param_values_p, value_p) == 0)
-																						{
+																					/*
+																					 * Parameters that already have array values, such as
+																					 * StringArrayParameters, need their entries added rather
+																					 * than the array itself, otherwise we'd get an array of
+																					 * arrays which the server can't parse.
+																					 */
+																					const int res = json_is_array (value_p) ?
+																						json_array_extend (param_values_p, value_p) :
+																						json_array_append (param_values_p, value_p);
 
-																						}
-																					else
+																					if (res != 0)
 																						{
-
+																							PrintJSONToErrors (STM_LEVEL_SEVERE, __FILE__, __LINE__, value_p, "Failed to add value for \"%s\"", param_s);
 																						}
 																				}
 																		}
