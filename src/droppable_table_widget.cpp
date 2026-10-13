@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QByteArray>
 
 #include "droppable_table_widget.h"
 #include "string_utils.h"
@@ -354,144 +355,55 @@ char *DroppableTableWidget :: GetEntry (const char *start_s, const char *end_s)
 
 
 
-// Parses a single row of CSV, handling quotes and embedded commas.
-// Modifies the input string 'line' in-place by inserting null-terminators.
-void parse_csv_row(char *line) {
-    bool in_quotes = false;
-    char *p = line;
-    char *cell_start = line;
-
-    while (*p != '\0' && *p != '\r' && *p != '\n') {
-        if (*p == '"') {
-            // Check for escaped double quotes ("") inside a quoted field
-            if (in_quotes && *(p + 1) == '"') {
-                p++; // Skip the first quote, treat second as literal
-            } else {
-                in_quotes = !in_quotes; // Toggle quote state
-            }
-        } else if (*p == ',' && !in_quotes) {
-            // End of cell found
-            *p = '\0'; // Null-terminate the current cell in-place
-            printf("Cell: %s\n", cell_start);
-            cell_start = p + 1; // Move to the start of the next cell
-        }
-        p++;
-    }
-
-    // Print the last cell in the row
-    printf("Cell: %s\n", cell_start);
-}
-
-
 void DroppableTableWidget :: SetRow (const int row, const char *data_s)
 {
-	const char *current_token_s = data_s;
-	const char *next_token_s = current_token_s;
+	const char *current_p = data_s;
+	QByteArray cell;
 	int col = 0;
-	bool loop_flag = true;
 	bool in_quotes_flag = false;
-	const char *quotes_start_p = nullptr;
-	const char *quotes_end_p = nullptr;
 
 	if (row >= rowCount ())
 		{
 			setRowCount (row + 1);
 		}
 
-
-	while ((*current_token_s != '\0') && (*current_token_s != '\r') && (*current_token_s != '\n'))
-  	{
-  		if (*current_token_s == '"')
-  			{
-  				// Check for escaped double quotes ("") inside a quoted field
-          if ((in_quotes_flag) && (* (current_token_s + 1) == '"'))
-          	{
-          		++ current_token_s; // Skip the first quote, treat second as literal
-          	}
-          else
-          	{
-          		// Toggle quote state
-          		if (in_quotes_flag)
-          			{
-          				quotes_end_p = current_token_s;
-          				in_quotes_flag = false;
-          			}
-          		else
-          			{
-          				quotes_start_p = current_token_s;
-          				in_quotes_flag = true;
-          			}
-
-          	}
-  			}
-  		else if ((*current_token_s == dtw_column_delimiter) && (!in_quotes_flag))
-  			{
-  				// End of cell found
-  				char start;
-  				char end;
-
-  				/* Temporarily null-terminate the current cell */
-  				if (quotes_start_p && quotes_end_p)
-  					{
-  						next_token_s = quotes_start_p + 1;
-  						end = *quotes_end_p;
-  						* (char *) quotes_end_p = '\0';
-  					}
-  				else
-  					{
-  						end = *current_token_s;
-  						* (char *) current_token_s = '\0';
-  					}
-
-  				AddCell (row, col, next_token_s);
-  				++ col;
-
-
-  				/* reset the current character to its original value */
-  				if (quotes_start_p && quotes_end_p)
-  					{
-  	          * (char *) quotes_end_p = end;
-  					}
-  				else
-  					{
-  						* (char *) current_token_s = end;
-  					}
-
-  				quotes_start_p = nullptr;
-  				quotes_end_p = nullptr;
-
-
-  				next_token_s = current_token_s + 1; // Move to the start of the next cell
-  			}
-
-  		++ current_token_s;
-  	}
-
-
-  // Add the last cell in the row
-
-	if ((quotes_start_p = strchr (next_token_s, '\"')) != nullptr)
+	while ((*current_p != '\0') && (*current_p != '\r') && (*current_p != '\n'))
 		{
-			if ((quotes_end_p = strchr (quotes_start_p + 1, '\"')) != nullptr)
+			if (*current_p == '"')
 				{
-					char end = *quotes_end_p;
-					* (char *) quotes_end_p = '\0';
+					if (in_quotes_flag && (* (current_p + 1) == '"'))
+						{
+							/* An escaped double quote ("") inside a quoted cell */
+							cell.append ('"');
+							++ current_p;
+						}
+					else
+						{
+							in_quotes_flag = !in_quotes_flag;
 
-					AddCell (row, col, quotes_start_p + 1);
-
-					* (char *) quotes_end_p = end;
-
-
-					++ col;
+							if (!dtw_unpack_text_content_flag)
+								{
+									cell.append ('"');
+								}
+						}
 				}
-		}
-	else
-		{
-			AddCell (row, col, next_token_s);
-			++ col;
+			else if ((*current_p == dtw_column_delimiter) && (!in_quotes_flag))
+				{
+					/* End of cell found */
+					AddCell (row, col, cell.constData ());
+					++ col;
+					cell.clear ();
+				}
+			else
+				{
+					cell.append (*current_p);
+				}
+
+			++ current_p;
 		}
 
-
+	/* Add the last cell in the row */
+	AddCell (row, col, cell.constData ());
 }
 
 
@@ -763,10 +675,7 @@ bool DroppableTableWidget :: SetValueFromText (const char *data_s)
 
 
 							start_column_p = end_column_p + 1;
-							if (*start_column_p != '\0')
-								{
-									end_column_p = strchr (start_column_p, dtw_column_delimiter);
-								}
+							end_column_p = strchr (start_column_p, dtw_column_delimiter);
 
 							++ y;
 						}		/* while (end_column_p) */
@@ -774,10 +683,7 @@ bool DroppableTableWidget :: SetValueFromText (const char *data_s)
 
 
 					start_row_p = end_row_p + 1;
-					if (*start_row_p != '\0')
-						{
-							end_row_p = strchr (start_row_p, dtw_row_delimiter);
-						}
+					end_row_p = strchr (start_row_p, dtw_row_delimiter);
 
 					++ x;
 				} /* while (start_row_p && end_row_p) */
@@ -839,16 +745,23 @@ void DroppableTableWidget :: LoadText (const char *filename_s)
 				{
 					if (GetLineFromFile (in_f, &buffer_s))
 						{
-							if (*buffer_s)
+							const char *c_p = buffer_s;
+
+							/* Skip blank lines */
+							while ((*c_p == ' ') || (*c_p == '\t'))
+								{
+									++ c_p;
+								}
+
+							if (*c_p)
 								{
 									SetRow (row, buffer_s);
 
 									++ row;
 								}
-							else
-								{
-									loop_flag = false;
-								}
+
+							FreeLineBuffer (buffer_s);
+							buffer_s = nullptr;
 						}
 					else
 						{
