@@ -104,6 +104,27 @@ private:
 	/** The response from the server, set by mw_fetch_thread_p */
 	json_t *mw_fetch_response_p;
 
+	/** The details of the HTTP response, set by mw_fetch_thread_p */
+	struct FetchStatus
+	{
+		long fs_http_status = 0L;
+		long fs_auth_available = 0L;
+		long fs_redirect_count = 0L;
+		QString fs_effective_url;
+		QString fs_redirect_url;
+	} mw_fetch_status;
+
+	/** The ways that a server can require us to authenticate */
+	enum AuthenticationType
+	{
+		AT_NONE,
+		AT_PASSWORD,
+		AT_SINGLE_SIGN_ON
+	};
+
+	/** Is the current fetch a retry after the user has signed in via single sign-on? */
+	bool mw_sso_retry_flag;
+
 	/** The Connection to a new server that we are trying to switch to */
 	struct Connection *mw_pending_connection_p;
 
@@ -114,9 +135,12 @@ private:
 	void SetParameterLevel (ParameterLevel pl);
 	void UseConnection (struct Connection *connection_p);
 	void FetchServices (struct Connection *connection_p);
-	void ProcessFetchedServices (json_t *response_p, struct Connection *connection_p);
+	void ProcessFetchedServices (json_t *response_p, struct Connection *connection_p, const FetchStatus &status_r);
+	static AuthenticationType GetRequiredAuthentication (const FetchStatus &status_r, const QString &server_url_r);
+	bool SignInWithSingleSignOn (struct Connection *connection_p, const QString &url_r);
 	void SetFetchingServices (const bool fetching_flag, const QString &url_r = QString ());
 	bool IsFetchingServices () const;
+	bool GetCredentials (const QString &url_r, const bool retry_flag, QString &username_r, QString &password_r);
 
 private slots:
 	void Run ();

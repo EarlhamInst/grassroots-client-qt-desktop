@@ -19,6 +19,12 @@
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QNetworkCookie>
+#include <QUrl>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
@@ -52,12 +58,19 @@
 #include "filesystem_utils.h"
 
 #include "qt_client_data.h"
+#include "sso_login_dialog.h"
 #include "ui_utils.h"
 #include "user_details.h"
 
 
 /** How long, in seconds, to wait for a server to send its list of services */
 static const long S_FETCH_SERVICES_TIMEOUT = 30L;
+
+/** The HTTP status code for when a server requires authentication */
+static const long S_HTTP_UNAUTHORIZED = 401L;
+
+/** The authentication methods that we can use with a username and password */
+static const long S_PASSWORD_AUTH_METHODS = CURLAUTH_BASIC | CURLAUTH_DIGEST | CURLAUTH_DIGEST_IE | CURLAUTH_NTLM;
 
 
 #ifdef _DEBUG
@@ -85,6 +98,7 @@ MainWindow :: MainWindow (QTClientData *data_p)
 	mw_fetch_thread_p = nullptr;
 	mw_fetch_response_p = nullptr;
 	mw_pending_connection_p = nullptr;
+	mw_sso_retry_flag = false;
 
 	AddActions ();
 
@@ -794,6 +808,7 @@ void MainWindow :: ConnectToServer ()
 
 					/* We only switch to the new server once it has sent us its services */
 					mw_pending_connection_p = new_connection_p;
+					mw_sso_retry_flag = false;
 					FetchServices (new_connection_p);
 				}
 			else
@@ -835,15 +850,40 @@ void MainWindow :: FetchServices (Connection *connection_p)
 			 * for the services must be created on the main thread.
 			 */
 			mw_fetch_response_p = nullptr;
-			mw_fetch_thread_p = QThread :: create ([this, req_p, connection_p] ()
+			mw_fetch_status = FetchStatus ();
+			mw_fetch_thread_p = QThread :: create ([this, req_p, connection_p, curl_tool_p] ()
 				{
 					mw_fetch_response_p = MakeRemoteJsonCall (req_p, connection_p);
+
+					/* Keep the details needed to see if the server requires authentication */
+					if (curl_tool_p)
+						{
+							CURL *curl_p = curl_tool_p -> ct_curl_p;
+							char *url_s = nullptr;
+
+							curl_easy_getinfo (curl_p, CURLINFO_RESPONSE_CODE, &mw_fetch_status.fs_http_status);
+							curl_easy_getinfo (curl_p, CURLINFO_HTTPAUTH_AVAIL, &mw_fetch_status.fs_auth_available);
+							curl_easy_getinfo (curl_p, CURLINFO_REDIRECT_COUNT, &mw_fetch_status.fs_redirect_count);
+
+							if ((curl_easy_getinfo (curl_p, CURLINFO_EFFECTIVE_URL, &url_s) == CURLE_OK) && url_s)
+								{
+									mw_fetch_status.fs_effective_url = QString :: fromUtf8 (url_s);
+								}
+
+							url_s = nullptr;
+							if ((curl_easy_getinfo (curl_p, CURLINFO_REDIRECT_URL, &url_s) == CURLE_OK) && url_s)
+								{
+									mw_fetch_status.fs_redirect_url = QString :: fromUtf8 (url_s);
+								}
+						}
+
 					json_decref (req_p);
 				});
 
 			connect (mw_fetch_thread_p, &QThread :: finished, this, [this, connection_p, curl_tool_p] ()
 				{
 					json_t *response_p = mw_fetch_response_p;
+					const FetchStatus status = mw_fetch_status;
 
 					if (curl_tool_p)
 						{
@@ -855,7 +895,7 @@ void MainWindow :: FetchServices (Connection *connection_p)
 					mw_fetch_response_p = nullptr;
 
 					SetFetchingServices (false);
-					ProcessFetchedServices (response_p, connection_p);
+					ProcessFetchedServices (response_p, connection_p, status);
 				});
 
 			SetFetchingServices (true, url);
@@ -874,15 +914,81 @@ void MainWindow :: FetchServices (Connection *connection_p)
 }
 
 
-void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *connection_p)
+void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *connection_p, const FetchStatus &status_r)
 {
 	const bool switching_flag = (connection_p == mw_pending_connection_p);
+	const bool sso_retry_flag = mw_sso_retry_flag;
 	const json_t *services_p = response_p ? json_object_get (response_p, SERVICES_NAME_S) : nullptr;
 	QString url;
+
+	mw_sso_retry_flag = false;
 
 	if (connection_p -> co_type == CT_WEB)
 		{
 			url = reinterpret_cast <WebConnection *> (connection_p) -> wc_uri_s;
+		}
+
+	/*
+	 * The server may require authentication, whether we are connecting to it
+	 * at start up, switching to it or our session with it has expired.
+	 */
+	if (! (services_p && json_is_array (services_p)))
+		{
+			const AuthenticationType auth_type = GetRequiredAuthentication (status_r, url);
+
+			if (auth_type != AT_NONE)
+				{
+					if (response_p)
+						{
+							json_decref (response_p);
+						}
+
+					if (auth_type == AT_PASSWORD)
+						{
+							/*
+							 * Ask the user for their details and try again. If they have
+							 * already given some, then they were rejected.
+							 */
+							const char *previous_username_s = reinterpret_cast <WebConnection *> (connection_p) -> wc_curl_p -> ct_username_s;
+							const bool retry_flag = (previous_username_s != nullptr);
+							QString username (QString :: fromUtf8 (previous_username_s));
+							QString password;
+
+							if (GetCredentials (url, retry_flag, username, password))
+								{
+									QByteArray username_ba = username.toUtf8 ();
+									QByteArray password_ba = password.toUtf8 ();
+
+									if (SetConnectionCredentials (connection_p, username_ba.constData (), password_ba.constData ()))
+										{
+											FetchServices (connection_p);
+											return;
+										}
+
+									QMessageBox :: warning (this, tr ("Connect to server"), tr ("Failed to set the username and password for %1").arg (url));
+								}
+						}
+					else if (sso_retry_flag)
+						{
+							/* We already have a session but the server is still asking us to sign in */
+							QMessageBox :: warning (this, tr ("Connect to server"), tr ("Signed in to %1 but the server did not accept the session").arg (url));
+						}
+					else if (SignInWithSingleSignOn (connection_p, url))
+						{
+							mw_sso_retry_flag = true;
+							FetchServices (connection_p);
+							return;
+						}
+
+					/* Only abandon a server that we were trying to switch to */
+					if (switching_flag)
+						{
+							FreeConnection (connection_p);
+							mw_pending_connection_p = nullptr;
+						}
+
+					return;
+				}
 		}
 
 	if (services_p && json_is_array (services_p))
@@ -958,6 +1064,153 @@ void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *conne
 		{
 			json_decref (response_p);
 		}
+}
+
+
+MainWindow :: AuthenticationType MainWindow :: GetRequiredAuthentication (const FetchStatus &status_r, const QString &server_url_r)
+{
+	if (status_r.fs_http_status == S_HTTP_UNAUTHORIZED)
+		{
+			/*
+			 * If the server doesn't offer any methods that use a username and
+			 * password, such as mod_auth_openidc for non-browser requests, then
+			 * the user needs to sign in via a browser.
+			 */
+			return ((status_r.fs_auth_available & S_PASSWORD_AUTH_METHODS) ? AT_PASSWORD : AT_SINGLE_SIGN_ON);
+		}
+
+	/* A redirect that wasn't followed, e.g. to an identity provider */
+	if ((status_r.fs_http_status >= 300L) && (status_r.fs_http_status < 400L) && (!status_r.fs_redirect_url.isEmpty ()))
+		{
+			return AT_SINGLE_SIGN_ON;
+		}
+
+	/*
+	 * We were redirected away from the server, e.g. to an identity provider's
+	 * sign in page. This can be on the same host so check the path too, but
+	 * ignore just switching from http to https.
+	 */
+	if (status_r.fs_redirect_count > 0L)
+		{
+			const QUrl effective_url (status_r.fs_effective_url);
+			const QUrl server_url (server_url_r);
+
+			if ((effective_url.host () != server_url.host ()) || (effective_url.path () != server_url.path ()))
+				{
+					return AT_SINGLE_SIGN_ON;
+				}
+		}
+
+	return AT_NONE;
+}
+
+
+bool MainWindow :: SignInWithSingleSignOn (Connection *connection_p, const QString &url_r)
+{
+	const QUrl server_url (url_r);
+	SSOLoginDialog dialog (server_url, this);
+
+	if (dialog.exec () == QDialog :: Accepted)
+		{
+			const QList <QNetworkCookie> cookies = dialog.GetServerCookies ();
+			CURL *curl_p = reinterpret_cast <WebConnection *> (connection_p) -> wc_curl_p -> ct_curl_p;
+			bool success_flag = true;
+
+			/*
+			 * Turn on curl's cookie engine so that the session cookies are sent
+			 * with every request to the server and any updates to them that the
+			 * server sends back are kept.
+			 */
+			curl_easy_setopt (curl_p, CURLOPT_COOKIEFILE, "");
+			curl_easy_setopt (curl_p, CURLOPT_COOKIELIST, "ALL");
+
+			for (const QNetworkCookie &cookie : cookies)
+				{
+					/*
+					 * Use the Netscape cookie file format so that host-only cookies,
+					 * which is what mod_auth_openidc sets by default, stay host-only.
+					 * Otherwise curl would treat any updated cookies from the server
+					 * as different ones and send both the old and new sessions.
+					 */
+					QString domain = cookie.domain ();
+					const bool tail_match_flag = domain.startsWith ('.');
+					const QString path = cookie.path ().isEmpty () ? QString ("/") : cookie.path ();
+					const qint64 expiry = cookie.isSessionCookie () ? 0 : cookie.expirationDate ().toSecsSinceEpoch ();
+					QByteArray cookie_ba;
+
+					if (domain.isEmpty ())
+						{
+							domain = server_url.host ();
+						}
+
+					if (cookie.isHttpOnly ())
+						{
+							cookie_ba.append ("#HttpOnly_");
+						}
+
+					cookie_ba.append (domain.toUtf8 ());
+					cookie_ba.append (tail_match_flag ? "\tTRUE\t" : "\tFALSE\t");
+					cookie_ba.append (path.toUtf8 ());
+					cookie_ba.append (cookie.isSecure () ? "\tTRUE\t" : "\tFALSE\t");
+					cookie_ba.append (QByteArray :: number (expiry));
+					cookie_ba.append ('\t');
+					cookie_ba.append (cookie.name ());
+					cookie_ba.append ('\t');
+					cookie_ba.append (cookie.value ());
+
+					if (curl_easy_setopt (curl_p, CURLOPT_COOKIELIST, cookie_ba.constData ()) != CURLE_OK)
+						{
+							success_flag = false;
+						}
+				}
+
+			if (!success_flag)
+				{
+					QMessageBox :: warning (this, tr ("Connect to server"), tr ("Failed to store the session for %1").arg (url_r));
+				}
+
+			return success_flag;
+		}
+
+	return false;
+}
+
+
+bool MainWindow :: GetCredentials (const QString &url_r, const bool retry_flag, QString &username_r, QString &password_r)
+{
+	QDialog dialog (this);
+	QFormLayout *layout_p = new QFormLayout (&dialog);
+	QLineEdit *username_p = new QLineEdit (&dialog);
+	QLineEdit *password_p = new QLineEdit (&dialog);
+	QDialogButtonBox *buttons_p = new QDialogButtonBox (QDialogButtonBox :: Ok | QDialogButtonBox :: Cancel, &dialog);
+	QString message = retry_flag ?
+		tr ("The username or password for %1 was not accepted, please try again.").arg (url_r) :
+		tr ("%1 requires a username and password.").arg (url_r);
+	QLabel *message_p = new QLabel (message, &dialog);
+
+	dialog.setWindowTitle (tr ("Connect to server"));
+
+	message_p -> setWordWrap (true);
+	username_p -> setText (username_r);
+	password_p -> setEchoMode (QLineEdit :: Password);
+
+	layout_p -> addRow (message_p);
+	layout_p -> addRow (tr ("Username:"), username_p);
+	layout_p -> addRow (tr ("Password:"), password_p);
+	layout_p -> addRow (buttons_p);
+
+	connect (buttons_p, &QDialogButtonBox :: accepted, &dialog, &QDialog :: accept);
+	connect (buttons_p, &QDialogButtonBox :: rejected, &dialog, &QDialog :: reject);
+
+	if (dialog.exec () == QDialog :: Accepted)
+		{
+			username_r = username_p -> text ();
+			password_r = password_p -> text ();
+
+			return true;
+		}
+
+	return false;
 }
 
 

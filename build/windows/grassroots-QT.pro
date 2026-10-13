@@ -202,6 +202,7 @@ SOURCES += \
     $$DIR_GRASSROOTS_QT_SRC/src/service_prefs_widget.cpp \
     $$DIR_GRASSROOTS_QT_SRC/src/services_list.cpp \
     $$DIR_GRASSROOTS_QT_SRC/src/services_tabs.cpp \
+    $$DIR_GRASSROOTS_QT_SRC/src/sso_login_dialog.cpp \
     $$DIR_GRASSROOTS_QT_SRC/src/standard_list_widget_item.cpp \
     $$DIR_GRASSROOTS_QT_SRC/src/text_viewer.cpp \
     $$DIR_GRASSROOTS_QT_SRC/src/ui_utils.cpp \
@@ -262,6 +263,7 @@ HEADERS  += \
     $$DIR_GRASSROOTS_QT_SRC/include/service_ui.h \
     $$DIR_GRASSROOTS_QT_SRC/include/services_list.h \
     $$DIR_GRASSROOTS_QT_SRC/include/services_tabs.h \
+    $$DIR_GRASSROOTS_QT_SRC/include/sso_login_dialog.h \
     $$DIR_GRASSROOTS_QT_SRC/include/standard_list_widget_item.h \
     $$DIR_GRASSROOTS_QT_SRC/include/text_viewer.h \
     $$DIR_GRASSROOTS_QT_SRC/include/ui_utils.h \

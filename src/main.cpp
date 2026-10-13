@@ -320,7 +320,19 @@ int main (int argc, char *argv [])
 												{
 													case OP_LIST_ALL_SERVICES:
 														{
-															GetAllServicesInClient (client_p, user_p);
+															/*
+															 * Get the services in the background so that the window is shown
+															 * straight away and the user can sign in if the server requires it.
+															 */
+															json_t *res_p = nullptr;
+
+															qt_data_p -> qcd_window_p -> RefreshServices ();
+															res_p = RunClient (client_p);
+
+															if (res_p)
+																{
+																	json_decref (res_p);
+																}
 														}
 														break;
 
