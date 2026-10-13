@@ -61,3 +61,9 @@ void ServicesTabs :: UpdateServicePrefs (const char *service_name_s, const json_
 
 }
 
+
+void ServicesTabs :: ClearServices ()
+{
+	/* This removes the tabs but does not delete their widgets */
+	clear ();
+}

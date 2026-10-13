@@ -34,6 +34,9 @@
 
 
 struct QTClientData;
+struct Connection;
+class QThread;
+class QToolBar;
 
 class MainWindow : public QMainWindow
 {
@@ -57,7 +60,7 @@ public slots:
 	void GetIndexingData ();
 
 
-	void GetAllServices ();
+	void RefreshServices ();
 	void GetInterestedServices ();
 	void GetNamedServices ();
 	void ConnectToServer ();
@@ -91,12 +94,29 @@ private:
 	QTabWidget *mw_tabs_p;
 	ParameterLevel mw_current_level;
 	QLabel *mw_user_label_p;
+	QToolBar *mw_toolbar_p;
+	QAction *mw_refresh_action_p;
+	QAction *mw_connect_action_p;
+
+	/** The thread used to get the services from the server, NULL if not running */
+	QThread *mw_fetch_thread_p;
+
+	/** The response from the server, set by mw_fetch_thread_p */
+	json_t *mw_fetch_response_p;
+
+	/** The Connection to a new server that we are trying to switch to */
+	struct Connection *mw_pending_connection_p;
 
 	void AddActions ();
 	void SetParams (json_t *config_p);
 
 	//bool AddResults (const json_t *job_results_p);
 	void SetParameterLevel (ParameterLevel pl);
+	void UseConnection (struct Connection *connection_p);
+	void FetchServices (struct Connection *connection_p);
+	void ProcessFetchedServices (json_t *response_p, struct Connection *connection_p);
+	void SetFetchingServices (const bool fetching_flag, const QString &url_r = QString ());
+	bool IsFetchingServices () const;
 
 private slots:
 	void Run ();

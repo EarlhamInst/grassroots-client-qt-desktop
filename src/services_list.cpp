@@ -163,6 +163,17 @@ void ServicesList :: UpdateServicePrefs (const char *service_name_s, const json_
 }
 
 
+void ServicesList :: ClearServices ()
+{
+	sl_services_p -> clear ();
+
+	while (sl_stacked_widgets_p -> count () > 0)
+		{
+			sl_stacked_widgets_p -> removeWidget (sl_stacked_widgets_p -> widget (0));
+		}
+}
+
+
 QListWidgetItem *ServicesList :: FindListWidgetItem (const char *service_name_s)
 {
 	QList <QListWidgetItem *> widgets = sl_services_p -> findItems (service_name_s, Qt :: MatchExactly);

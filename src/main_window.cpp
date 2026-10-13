@@ -18,6 +18,7 @@
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
@@ -32,10 +33,16 @@
 #include <QScreen>
 #include <QWidget>
 #include <QStatusBar>
+#include <QMessageBox>
+#include <QApplication>
+#include <QThread>
 
 
 #include "string_utils.h"
 #include "request_tools.h"
+#include "connection.h"
+#include "curl_tools.h"
+#include "schema_keys.h"
 
 #include "json_tools.h"
 #include "json_util.h"
@@ -47,6 +54,10 @@
 #include "qt_client_data.h"
 #include "ui_utils.h"
 #include "user_details.h"
+
+
+/** How long, in seconds, to wait for a server to send its list of services */
+static const long S_FETCH_SERVICES_TIMEOUT = 30L;
 
 
 #ifdef _DEBUG
@@ -70,6 +81,10 @@ MainWindow :: MainWindow (QTClientData *data_p)
 	setWindowIcon (QIcon ("images/app"));
 
 	mw_current_level = PL_SIMPLE;
+
+	mw_fetch_thread_p = nullptr;
+	mw_fetch_response_p = nullptr;
+	mw_pending_connection_p = nullptr;
 
 	AddActions ();
 
@@ -561,6 +576,17 @@ void MainWindow :: dragEnterEvent (QDragEnterEvent *event_p)
 
 void MainWindow :: closeEvent (QCloseEvent *event_p)
 {
+	if (IsFetchingServices ())
+		{
+			/*
+			 * The fetch thread is using the Connection so we can't
+			 * close until it has finished.
+			 */
+			QMessageBox :: information (this, tr ("Getting services"), tr ("Please wait until the services have been received from the server before closing"));
+			event_p -> ignore ();
+			return;
+		}
+
 	event_p -> accept ();
 	emit Closed ();
 }
@@ -572,6 +598,7 @@ void MainWindow :: AddActions ()
 	QMenuBar *menu_bar_p = menuBar ();
 	QToolBar *main_toolbar_p = new QToolBar (tr ("Main"));
 	main_toolbar_p -> setToolButtonStyle (Qt :: ToolButtonFollowStyle);
+	mw_toolbar_p = main_toolbar_p;
 
 	// File Menu
 	QMenu *menu_p = menu_bar_p -> addMenu (tr ("&File"));
@@ -614,17 +641,20 @@ void MainWindow :: AddActions ()
 
 	// Connect Menu
 	menu_p = menu_bar_p -> addMenu (tr ("&Connect"));
-	action_p = new QAction (tr ("Connect to server"), this);
+	action_p = new QAction (tr ("Connect to server..."), this);
 	connect (action_p, &QAction :: triggered, 	this, &MainWindow :: ConnectToServer);
 	menu_p -> addAction (action_p);
+	mw_connect_action_p = action_p;
 
 
 	// Operations
 
-	// Get all services
-	action_p = new QAction (tr ("Get all services"), this);
-	connect (action_p, &QAction :: triggered, 	this, &MainWindow :: GetAllServices);
+	// Refresh services
+	action_p = new QAction (tr ("Refresh services"), this);
+	action_p -> setShortcut (QKeySequence :: Refresh);
+	connect (action_p, &QAction :: triggered, 	this, &MainWindow :: RefreshServices);
 	menu_p -> addAction (action_p);
+	mw_refresh_action_p = action_p;
 
 	// Get interested services
 	action_p = new QAction (tr ("Get interested services"), this);
@@ -709,11 +739,12 @@ void MainWindow :: SetParameterLevel (ParameterLevel pl)
 }
 
 
-void MainWindow :: GetAllServices ()
+void MainWindow :: RefreshServices ()
 {
-	User *user_p = nullptr;
-	Client *client_p = mw_client_data_p -> qcd_base_data.cd_client_p;
-	GetAllServicesInClient (client_p, user_p);
+	if (!IsFetchingServices ())
+		{
+			FetchServices (mw_client_data_p -> qcd_base_data.cd_connection_p);
+		}
 }
 
 
@@ -732,7 +763,248 @@ void MainWindow :: GetNamedServices ()
 
 void MainWindow :: ConnectToServer ()
 {
+	if (IsFetchingServices ())
+		{
+			return;
+		}
 
+	const QString current_url (mw_client_data_p -> qcd_server_url_s);
+	bool ok_flag = false;
+	QString url = QInputDialog :: getText (this, tr ("Connect to server"), tr ("Grassroots server URL:"), QLineEdit :: Normal, current_url, &ok_flag).trimmed ();
+
+	if (ok_flag && (!url.isEmpty ()) && (url != current_url))
+		{
+			if (mw_client_data_p -> qcd_progress_p -> HasProgressItems ())
+				{
+					if (QMessageBox :: question (this, tr ("Connect to server"), tr ("The jobs from %1 will be removed from the progress window. Do you want to continue?").arg (current_url)) != QMessageBox :: Yes)
+						{
+							return;
+						}
+				}
+
+			QByteArray url_ba = url.toUtf8 ();
+			Connection *new_connection_p = AllocateWebServerConnection (url_ba.constData (), CM_MEMORY);
+
+			if (new_connection_p)
+				{
+					if (new_connection_p -> co_type == CT_WEB)
+						{
+							SetCurlToolVerbose (reinterpret_cast <WebConnection *> (new_connection_p) -> wc_curl_p, mw_client_data_p -> qcd_verbose_flag);
+						}
+
+					/* We only switch to the new server once it has sent us its services */
+					mw_pending_connection_p = new_connection_p;
+					FetchServices (new_connection_p);
+				}
+			else
+				{
+					QMessageBox :: warning (this, tr ("Connect to server"), tr ("Failed to create a connection to %1").arg (url));
+				}
+		}
+}
+
+
+bool MainWindow :: IsFetchingServices () const
+{
+	return (mw_fetch_thread_p != nullptr);
+}
+
+
+void MainWindow :: FetchServices (Connection *connection_p)
+{
+	json_t *req_p = GetAvailableServicesRequest (nullptr, mw_client_data_p -> qcd_base_data.cd_schema_p);
+
+	if (req_p)
+		{
+			CurlTool *curl_tool_p = nullptr;
+			QString url;
+
+			if (connection_p -> co_type == CT_WEB)
+				{
+					WebConnection *web_connection_p = reinterpret_cast <WebConnection *> (connection_p);
+
+					curl_tool_p = web_connection_p -> wc_curl_p;
+					url = web_connection_p -> wc_uri_s;
+
+					/* Don't let an unresponsive server block us for too long */
+					SetCurlToolTimeout (curl_tool_p, S_FETCH_SERVICES_TIMEOUT);
+				}
+
+			/*
+			 * Only make the network call on the fetch thread, the widgets
+			 * for the services must be created on the main thread.
+			 */
+			mw_fetch_response_p = nullptr;
+			mw_fetch_thread_p = QThread :: create ([this, req_p, connection_p] ()
+				{
+					mw_fetch_response_p = MakeRemoteJsonCall (req_p, connection_p);
+					json_decref (req_p);
+				});
+
+			connect (mw_fetch_thread_p, &QThread :: finished, this, [this, connection_p, curl_tool_p] ()
+				{
+					json_t *response_p = mw_fetch_response_p;
+
+					if (curl_tool_p)
+						{
+							SetCurlToolTimeout (curl_tool_p, 0L);
+						}
+
+					mw_fetch_thread_p -> deleteLater ();
+					mw_fetch_thread_p = nullptr;
+					mw_fetch_response_p = nullptr;
+
+					SetFetchingServices (false);
+					ProcessFetchedServices (response_p, connection_p);
+				});
+
+			SetFetchingServices (true, url);
+			mw_fetch_thread_p -> start ();
+		}
+	else
+		{
+			QMessageBox :: warning (this, tr ("Getting services"), tr ("Failed to create the request for the list of services"));
+
+			if (connection_p == mw_pending_connection_p)
+				{
+					FreeConnection (mw_pending_connection_p);
+					mw_pending_connection_p = nullptr;
+				}
+		}
+}
+
+
+void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *connection_p)
+{
+	const bool switching_flag = (connection_p == mw_pending_connection_p);
+	const json_t *services_p = response_p ? json_object_get (response_p, SERVICES_NAME_S) : nullptr;
+	QString url;
+
+	if (connection_p -> co_type == CT_WEB)
+		{
+			url = reinterpret_cast <WebConnection *> (connection_p) -> wc_uri_s;
+		}
+
+	if (services_p && json_is_array (services_p))
+		{
+			Client *client_p = mw_client_data_p -> qcd_base_data.cd_client_p;
+			const json_t *header_p = json_object_get (response_p, HEADER_S);
+			const json_t *user_json_p = json_object_get (response_p, USER_S);
+
+			if (switching_flag)
+				{
+					Connection *old_connection_p = mw_client_data_p -> qcd_base_data.cd_connection_p;
+
+					mw_client_data_p -> qcd_progress_p -> ClearProgressItems ();
+					UseConnection (connection_p);
+					FreeConnection (old_connection_p);
+					mw_pending_connection_p = nullptr;
+				}
+
+			/* Get the schema version used by the server */
+			if (header_p)
+				{
+					const json_t *schema_p = json_object_get (header_p, SCHEMA_S);
+
+					if (schema_p)
+						{
+							SchemaVersion *server_schema_p = GetSchemaVersionFromJSON (schema_p);
+
+							if (server_schema_p)
+								{
+									SetClientSchema (client_p, server_schema_p);
+								}
+						}
+				}
+
+			if (user_json_p)
+				{
+					User *user_p = GetUserFromJSON (user_json_p);
+
+					if (user_p)
+						{
+							SetUser (user_p);
+							FreeUser (user_p);
+						}
+				}
+
+			mw_prefs_widget_p -> ClearServices ();
+
+			json_t *client_results_p = ShowServices (response_p, client_p, nullptr, connection_p);
+
+			if (client_results_p)
+				{
+					json_decref (client_results_p);
+				}
+		}
+	else
+		{
+			if (switching_flag)
+				{
+					const QString current_url (mw_client_data_p -> qcd_server_url_s);
+
+					FreeConnection (connection_p);
+					mw_pending_connection_p = nullptr;
+
+					QMessageBox :: warning (this, tr ("Connect to server"), tr ("Failed to get any services from %1, staying connected to %2").arg (url, current_url));
+				}
+			else
+				{
+					QMessageBox :: warning (this, tr ("Getting services"), tr ("Failed to get the services from %1").arg (url));
+				}
+		}
+
+	if (response_p)
+		{
+			json_decref (response_p);
+		}
+}
+
+
+void MainWindow :: SetFetchingServices (const bool fetching_flag, const QString &url_r)
+{
+	const bool enabled_flag = !fetching_flag;
+
+	/* Stop anything else using the Connection whilst the fetch thread is running */
+	mw_prefs_widget_p -> setEnabled (enabled_flag);
+	mw_toolbar_p -> setEnabled (enabled_flag);
+	mw_refresh_action_p -> setEnabled (enabled_flag);
+	mw_connect_action_p -> setEnabled (enabled_flag);
+	mw_client_data_p -> qcd_progress_p -> setEnabled (enabled_flag);
+
+	if (fetching_flag)
+		{
+			statusBar () -> showMessage (tr ("Getting services from %1...").arg (url_r));
+			QApplication :: setOverrideCursor (Qt :: BusyCursor);
+		}
+	else
+		{
+			statusBar () -> clearMessage ();
+			QApplication :: restoreOverrideCursor ();
+		}
+}
+
+
+void MainWindow :: UseConnection (Connection *connection_p)
+{
+	mw_client_data_p -> qcd_base_data.cd_connection_p = connection_p;
+	mw_client_data_p -> qcd_server_url_s = nullptr;
+
+	if (connection_p -> co_type == CT_WEB)
+		{
+			mw_client_data_p -> qcd_server_url_s = reinterpret_cast <WebConnection *> (connection_p) -> wc_uri_s;
+		}
+
+	QString title (mw_client_data_p -> qcd_dummy_arg_s);
+
+	if (mw_client_data_p -> qcd_server_url_s)
+		{
+			title.append (" - ");
+			title.append (mw_client_data_p -> qcd_server_url_s);
+		}
+
+	setWindowTitle (title);
+	mw_client_data_p -> qcd_progress_p -> UpdateTitle ();
 }
 
 

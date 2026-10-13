@@ -81,6 +81,10 @@ public:
 
 	QVector <const char *> *GetActiveServices ();
 
+	void ClearServices ();
+
+	int GetNumServices () const;
+
 
 private:
 

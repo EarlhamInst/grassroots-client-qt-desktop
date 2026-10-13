@@ -34,6 +34,7 @@ public:
   virtual void AddService (const char * const service_name_s, ServicePrefsWidget *service_widget_p);
   virtual QWidget *GetWidget ();
 	virtual void UpdateServicePrefs (const char *service_name_s, const json_t *params_json_p);
+	virtual void ClearServices ();
 
 public slots:
   void SelectService (const char *service_name_s, const json_t *params_json_p);

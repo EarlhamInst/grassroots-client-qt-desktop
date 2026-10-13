@@ -128,6 +128,21 @@ void PrefsWidget :: CreateAndAddServicePage (const char * const service_name_s, 
 }
 
 
+void PrefsWidget :: ClearServices ()
+{
+	pw_services_ui_p -> ClearServices ();
+
+	qDeleteAll (pw_service_widgets);
+	pw_service_widgets.clear ();
+}
+
+
+int PrefsWidget :: GetNumServices () const
+{
+	return pw_service_widgets.size ();
+}
+
+
 bool PrefsWidget :: SetServiceParams (json_t *services_config_p)
 {
 	bool success_flag = false;

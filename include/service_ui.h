@@ -33,6 +33,12 @@ public:
   virtual void AddService (const char * const service_name_s, ServicePrefsWidget *service_widget_p) = 0;
   virtual QWidget *GetWidget () = 0;
 	virtual void UpdateServicePrefs (const char *service_name_s, const json_t *params_json_p) = 0;
+
+	/**
+	 * Remove all of the services from the display. The
+	 * ServicePrefsWidgets are not deleted.
+	 */
+	virtual void ClearServices () = 0;
 };
 
 #endif // SERVICE_UI_H

@@ -46,6 +46,12 @@ public:
 
 	void RefreshStatuses (ProgressWidget **widgets_pp, const size_t num_widgets);
 
+	bool HasProgressItems () const;
+
+	void ClearProgressItems ();
+
+	void UpdateTitle ();
+
 public slots:
 	void UpdateStatuses ();
 	void ViewResults ();

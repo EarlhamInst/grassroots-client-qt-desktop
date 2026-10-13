@@ -347,6 +347,12 @@ int main (int argc, char *argv [])
 														break;
 												}		/* switch (api_id) */
 
+											/*
+											 * The user may have switched to a different server
+											 * so make sure that we free the current connection
+											 */
+											connection_p = qt_data_p -> qcd_base_data.cd_connection_p;
+
 											ReleaseClient (client_p);
 										}		/* if (client_p) */
 
