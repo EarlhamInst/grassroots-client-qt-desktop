@@ -93,7 +93,7 @@ SSOLoginDialog :: SSOLoginDialog (const QUrl &server_url_r, QWidget *parent_p)
 				}
 		});
 
-	resize (900, 700);
+	resize (1024, 768);
 
 	sld_view_p -> load (server_url_r);
 }
