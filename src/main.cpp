@@ -87,8 +87,7 @@ int main (int argc, char *argv [])
 			bool web_server_flag = true;
 			CURLcode c;
 			Connection *connection_p = NULL;
-			bool verbose_flag = false;
-			bool globus_auth_flag = false;
+            bool verbose_flag = false;
 			const uint16 port = 1337;
 			char *access_token_s = NULL;
 
@@ -203,10 +202,6 @@ int main (int argc, char *argv [])
 						{
 							verbose_flag = true;
 						}
-					else if (strcmp (argv [i], "--globus_auth") == 0)
-						{
-							globus_auth_flag = true;
-						}
 					else
 						{
 							printf ("Unknown argument: \"%s\"", argv [i]);
@@ -230,149 +225,90 @@ int main (int argc, char *argv [])
 
 			if (connection_p)
 				{
-					bool success_flag = false;
 
-					if (globus_auth_flag)
+					if (InitDefaultOutputStream ())
 						{
-							static char *app_s = EasyCopyToNewString ("Grassroots Auth");
+							Client *client_p = GetClient (connection_p, argc, argv);
 
-							/*
-							//QStyle *style_p = QStyleFactory :: create ("Fusion");
-							// /QApplication :: setStyle (style_p);
-
-							//qDebug() << QStyleFactory::keys();
-
-							QApplication *app_p = new QApplication (argc, argv);
-
-							QWindow *win_p = new QWindow;
-
-							win_p -> setTitle (app_s);
-							win_p -> show ();
-
-
-							GlobusAuth *auth_p = new GlobusAuth (win_p, username_s, password_s, port);
-
-							auth_p -> Authenticate ();
-							app_p -> exec ();
-
-							if (auth_p -> IsAccessTokenSet ())
+							if (client_p)
 								{
-									const char *token_s = auth_p -> GetAccessToken ();
+									QTClientData *qt_data_p = reinterpret_cast <QTClientData *> (client_p -> cl_data_p);
+									SchemaVersion *sv_p = AllocateSchemaVersion (CURRENT_SCHEMA_VERSION_MAJOR, CURRENT_SCHEMA_VERSION_MINOR);
+									User *user_p = NULL;
 
-									access_token_s = EasyCopyToNewString (token_s);
-
-									if (!access_token_s)
-										{
-											PrintErrors (STM_LEVEL_SEVERE, __FILE__, __LINE__, "Failed to copy access token");
-										}
-								}
-
-							if (AddConnectionHeader (connection_p, "token_type", "Bearer"))
-								{
-									if (AddConnectionHeader (connection_p, "access_token", access_token_s))
-										{
-											success_flag = true;
-										}
-
-								}
-
-								*/
-							success_flag = true;
-						}
-					else
-						{
-							success_flag = true;
-						}
-
-					if (success_flag)
-						{
-							if (InitDefaultOutputStream ())
-								{
-									Client *client_p = GetClient (connection_p, argc, argv);
-
-									if (client_p)
-										{
-											QTClientData *qt_data_p = reinterpret_cast <QTClientData *> (client_p -> cl_data_p);
-											SchemaVersion *sv_p = AllocateSchemaVersion (CURRENT_SCHEMA_VERSION_MAJOR, CURRENT_SCHEMA_VERSION_MINOR);
-											User *user_p = NULL;
-
-											if (!globus_auth_flag)
+											if (username_s && password_s)
 												{
-													if (username_s && password_s)
+													if (!SetConnectionCredentials (connection_p, username_s, password_s))
 														{
-															if (!SetConnectionCredentials (connection_p, username_s, password_s))
-																{
-																	PrintErrors (STM_LEVEL_SEVERE, __FILE__, __LINE__, "Failed to set credentials");
-																}
+															PrintErrors (STM_LEVEL_SEVERE, __FILE__, __LINE__, "Failed to set credentials");
 														}
 												}
 
-											SetClientSchema (client_p, sv_p);
 
-											qt_data_p -> qcd_verbose_flag = verbose_flag;
+									SetClientSchema (client_p, sv_p);
 
-											if (connection_p -> co_type == CT_WEB)
+									qt_data_p -> qcd_verbose_flag = verbose_flag;
+
+									if (connection_p -> co_type == CT_WEB)
+										{
+											SetCurlToolVerbose (((WebConnection *) connection_p) -> wc_curl_p, verbose_flag);
+										}
+
+									switch (op)
+										{
+											case OP_LIST_ALL_SERVICES:
 												{
-													SetCurlToolVerbose (((WebConnection *) connection_p) -> wc_curl_p, verbose_flag);
+													/*
+													 * Get the services in the background so that the window is shown
+													 * straight away and the user can sign in if the server requires it.
+													 */
+													json_t *res_p = nullptr;
+
+													qt_data_p -> qcd_window_p -> RefreshServices ();
+													res_p = RunClient (client_p);
+
+													if (res_p)
+														{
+															json_decref (res_p);
+														}
 												}
+												break;
 
-											switch (op)
+											case OP_LIST_INTERESTED_SERVICES:
 												{
-													case OP_LIST_ALL_SERVICES:
-														{
-															/*
-															 * Get the services in the background so that the window is shown
-															 * straight away and the user can sign in if the server requires it.
-															 */
-															json_t *res_p = nullptr;
+													GetInterestedServicesInClient (client_p, protocol_s, query_s, user_p);
+												}
+												break;
 
-															qt_data_p -> qcd_window_p -> RefreshServices ();
-															res_p = RunClient (client_p);
-
-															if (res_p)
-																{
-																	json_decref (res_p);
-																}
-														}
-														break;
-
-													case OP_LIST_INTERESTED_SERVICES:
-														{
-															GetInterestedServicesInClient (client_p, protocol_s, query_s, user_p);
-														}
-														break;
-
-													case OP_GET_NAMED_SERVICES:
-														{
-															GetNamedServicesInClient (client_p, keyword_s, user_p);
-														}
-														break;
+											case OP_GET_NAMED_SERVICES:
+												{
+													GetNamedServicesInClient (client_p, keyword_s, user_p);
+												}
+												break;
 
 
-													case OP_GET_SERVICE_INFO:
-														{
-															GetNamedServicesIndexingDataInClient (client_p, keyword_s, user_p);
-														}
-														break;
+											case OP_GET_SERVICE_INFO:
+												{
+													GetNamedServicesIndexingDataInClient (client_p, keyword_s, user_p);
+												}
+												break;
 
-													default:
-														break;
-												}		/* switch (api_id) */
+											default:
+												break;
+										}		/* switch (api_id) */
 
-											/*
-											 * The user may have switched to a different server
-											 * so make sure that we free the current connection
-											 */
-											connection_p = qt_data_p -> qcd_base_data.cd_connection_p;
+									/*
+									 * The user may have switched to a different server
+									 * so make sure that we free the current connection
+									 */
+									connection_p = qt_data_p -> qcd_base_data.cd_connection_p;
 
-											ReleaseClient (client_p);
-										}		/* if (client_p) */
+									ReleaseClient (client_p);
+								}		/* if (client_p) */
 
 
-									FreeDefaultOutputStream ();
-								}
-
-						}		/*if (success_flag) */
+							FreeDefaultOutputStream ();
+						}
 
 
 					FreeConnection (connection_p);

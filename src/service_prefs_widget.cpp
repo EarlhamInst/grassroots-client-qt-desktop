@@ -28,6 +28,7 @@
 #include "service.h"
 #include "streams.h"
 #include "parameter.h"
+#include "string_utils.h"
 
 
 #ifdef _DEBUG
@@ -38,9 +39,9 @@
 
 ServicePrefsWidget::ServicePrefsWidget (const char * const service_name_s, const char * const service_description_s, const char * const service_info_uri_s, const char * const service_icon_uri_s, const json_t *provider_p, ParameterSet *params_p, ServiceMetadata *metadata_p, QTClientData *client_data_p, QWidget *parent_p, ParameterLevel level)
 : QWidget (parent_p),
-	spw_service_name_s (service_name_s),
+	spw_service_name_s (EasyCopyToNewString (service_name_s)),
 	spw_client_data_p (client_data_p),
-	spw_icon_uri_s (service_icon_uri_s)
+	spw_icon_uri_s (service_icon_uri_s ? EasyCopyToNewString (service_icon_uri_s) : nullptr)
 {
 	QLayout *layout_p = new QVBoxLayout;
 	QScrollArea *scroller_p = new QScrollArea;
@@ -59,7 +60,7 @@ ServicePrefsWidget::ServicePrefsWidget (const char * const service_name_s, const
 
 	spw_run_service_button_p = new QCheckBox (s, this);
 	spw_run_service_button_p -> setChecked (Qt :: Unchecked);
-	connect (spw_run_service_button_p, &QCheckBox :: stateChanged, this, &ServicePrefsWidget :: SetRunFlag);
+    connect (spw_run_service_button_p, &QCheckBox :: checkStateChanged, this, &ServicePrefsWidget :: SetRunFlag);
 
 	QPushButton *reset_button_p = new QPushButton (QIcon ("images/reload"), "Restore Defaults", this);
 	connect (reset_button_p, &QAbstractButton :: clicked, spw_params_widget_p, &QTParameterWidget :: ResetToDefaults);
@@ -81,6 +82,16 @@ ServicePrefsWidget::ServicePrefsWidget (const char * const service_name_s, const
 ServicePrefsWidget :: ~ServicePrefsWidget ()
 {
 	delete spw_params_widget_p;
+
+	if (spw_service_name_s)
+		{
+			FreeCopiedString (spw_service_name_s);
+		}
+
+	if (spw_icon_uri_s)
+		{
+			FreeCopiedString (spw_icon_uri_s);
+		}
 }
 
 
@@ -109,10 +120,11 @@ void ServicePrefsWidget :: ToggleRunFlag ()
 }
 
 
-void ServicePrefsWidget :: SetRunFlag (bool state)
+void ServicePrefsWidget :: SetRunFlag (bool run_flag)
 {
-	spw_run_service_button_p -> setCheckState (state ? Qt :: Checked : Qt :: Unchecked);
-	emit RunStatusChanged (spw_service_name_s ,state);
+    const Qt :: CheckState state = run_flag ? Qt :: Checked : Qt :: Unchecked;
+    spw_run_service_button_p -> setCheckState (state);
+    emit RunStatusChanged (spw_service_name_s, run_flag);
 }
 
 

@@ -84,11 +84,9 @@ void ServicesList :: ToggleServiceRunStatus (const QModelIndex &index_r)
 void ServicesList :: CheckServiceRunStatus (const QListWidgetItem *item_p)
 {
   int row = sl_services_p -> row (item_p);
-  bool state = item_p -> checkState () == Qt :: Checked;
 
   ServicePrefsWidget *widget_p = static_cast <ServicePrefsWidget *> (sl_stacked_widgets_p -> widget (row));
-  widget_p -> SetRunFlag (state);
-
+  widget_p -> SetRunFlag (item_p -> checkState ());
 }
 
 
@@ -189,11 +187,25 @@ QListWidgetItem *ServicesList :: FindListWidgetItem (const char *service_name_s)
 
 void ServicesList :: SetServiceRunStatus (const char * const service_name_s, bool state)
 {
-	QListWidgetItem *item_p = FindListWidgetItem (service_name_s);
+	QListWidgetItem *item_p = nullptr;
 
-	if (item_p)
+	if (service_name_s)
 		{
-			item_p -> setCheckState (state ? Qt :: Checked : Qt :: Unchecked);
+			item_p = FindListWidgetItem (service_name_s);
+
+			if (item_p)
+				{
+					item_p -> setCheckState (state ? Qt :: Checked : Qt :: Unchecked);
+				}
+			else
+				{
+					PrintErrors (STM_LEVEL_SEVERE, __FILE__, __LINE__, "ServicesList :: SetServiceRunStatus (): unknown service \"%s\"", service_name_s);
+
+				}
+		}
+	else
+		{
+			PrintErrors (STM_LEVEL_SEVERE, __FILE__, __LINE__, "ServicesList :: SetServiceRunStatus (): No service name");
 		}
 }
 

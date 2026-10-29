@@ -47,6 +47,7 @@
 #endif
 
 static int s_dummy_argc = 1;
+static char *s_dummy_args_ss [2];
 
 static QTClientData *AllocateQTClientData (Connection *connection_p, int argc, char *argv []);
 
@@ -128,16 +129,20 @@ static QTClientData *AllocateQTClientData (Connection *connection_p, int argc, c
 					 */
 					QStyle *style_p = QStyleFactory :: create ("Fusion");
 					QApplication :: setStyle (style_p);
-
 					qDebug() << QStyleFactory::keys();
 
+
+					*s_dummy_args_ss = data_p -> qcd_dummy_arg_s;
+					* (s_dummy_args_ss + 1) = nullptr;
+
 					try
-					{
-						data_p -> qcd_app_p = new QApplication (s_dummy_argc, & (data_p -> qcd_dummy_arg_s));
+						{
+							data_p -> qcd_app_p = new QApplication (s_dummy_argc, s_dummy_args_ss);
 						}
-					catch (std :: exception &e) {
-						qDebug () << e.what () << Qt :: endl;
-					}
+					catch (std :: exception &e)
+						{
+							qDebug () << e.what () << Qt :: endl;
+						}
 
 					data_p -> qcd_window_p = new MainWindow (data_p);
 

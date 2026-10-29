@@ -187,13 +187,11 @@ SOURCES += \
 		$$DIR_GRASSROOTS_QT_SRC/src/signed_int_param_spin_box.cpp \
 		$$DIR_GRASSROOTS_QT_SRC/src/unsigned_int_param_spin_box.cpp \
 	../../src/alloc_failure.cpp \
-	../../src/auth.cpp \
 	../../src/base_combo_box.cpp \
 	../../src/base_table_widget.cpp \
 	../../src/double_combo_box.cpp \
 	../../src/droppable_table_widget.cpp \
 	../../src/droppable_text_box.cpp \
-	../../src/globus_auth.cpp \
 	../../src/json_table_widget.cpp \
 	../../src/labels_widget.cpp \
 	../../src/param_char_edit.cpp \
@@ -250,13 +248,11 @@ HEADERS  += \
 		$$DIR_GRASSROOTS_QT_SRC/include/signed_int_param_spin_box.h \
 		$$DIR_GRASSROOTS_QT_SRC/include/unsigned_int_param_spin_box.h \
 	../../include/alloc_failure.hpp \
-	../../include/auth.hpp \
 	../../include/base_combo_box.h \
 	../../include/base_table_widget.h \
 	../../include/double_combo_box.h \
 	../../include/droppable_table_widget.h \
 	../../include/droppable_text_box.h \
-	../../include/globus_auth.hpp \
 	../../include/json_table_widget.h \
 	../../include/labels_widget.h \
 	../../include/param_char_edit.h \

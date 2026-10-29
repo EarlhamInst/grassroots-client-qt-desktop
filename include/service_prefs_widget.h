@@ -62,15 +62,15 @@ signals:
 
 
 public slots:
-	void SetRunFlag (bool state);
+    void SetRunFlag (bool run_flag);
 	void ToggleRunFlag ();
 
 private:
 	QTParameterWidget *spw_params_widget_p;
-	const char *spw_service_name_s;
+	char *spw_service_name_s;
 	QCheckBox *spw_run_service_button_p;
 	const struct QTClientData *spw_client_data_p;
-	const char *spw_icon_uri_s;
+	char *spw_icon_uri_s;
 };
 
 #endif // SERVICE_PREFS_WIDGET_H

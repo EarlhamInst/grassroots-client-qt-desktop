@@ -25,11 +25,11 @@ BaseComboBox :: ~BaseComboBox ()
 
 void BaseComboBox :: SetMaxVisibleItemsFromParameter (Parameter *param_p)
 {
-	int max_items = 20;
+    int max_items = 20;
 
 	if (param_p -> pa_options_p)
 		{
-			if (max_items < param_p -> pa_options_p -> ll_size)
+        if (static_cast <uint32> (max_items) < param_p -> pa_options_p -> ll_size)
 				{
 					max_items = param_p -> pa_options_p -> ll_size;
 				}

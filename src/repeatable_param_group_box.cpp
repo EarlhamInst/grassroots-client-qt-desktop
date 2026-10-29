@@ -496,7 +496,7 @@ void RepeatableParamGroupBox :: SelectedListEntryChanged ()
 														{
 															const size_t num_values = json_array_size (value_p);
 
-															if (row < num_values)
+                                                        if (static_cast <size_t> (row) < num_values)
 																{
 																	BaseParamWidget *widget_p = pgb_parent_p -> GetWidgetForParameter (param_name_s);
 

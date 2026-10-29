@@ -32,7 +32,7 @@ ParamCheckBox :: ParamCheckBox (BooleanParameter * const param_p, QTParameterWid
 
 	if (param_p -> bp_base_param.pa_refresh_service_flag)
 		{
-			QObject ::  connect (pcb_check_box_p, &QCheckBox :: stateChanged, parent_p, &QTParameterWidget :: RefreshService);
+            QObject ::  connect (pcb_check_box_p, &QCheckBox :: checkStateChanged, parent_p, &QTParameterWidget :: RefreshService);
 		}
 }
 
