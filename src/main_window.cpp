@@ -386,6 +386,10 @@ void MainWindow :: RunServices (bool run_flag)
 
 					json_decref (client_params_p);
 				}		/* if (client_params_p) */
+			else
+				{
+					QMessageBox :: warning (this, "Error running service", "Failed to get parameter values");
+				}
 		}
 	else
 		{
@@ -921,6 +925,7 @@ void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *conne
 	const json_t *services_p = response_p ? json_object_get (response_p, SERVICES_NAME_S) : nullptr;
 	QString url;
 
+
 	mw_sso_retry_flag = false;
 
 	if (connection_p -> co_type == CT_WEB)
@@ -997,6 +1002,10 @@ void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *conne
 			const json_t *header_p = json_object_get (response_p, HEADER_S);
 			const json_t *user_json_p = json_object_get (response_p, USER_S);
 
+
+			PrintJSONToLog (STM_LEVEL_INFO, __FILE__, __LINE__, response_p, "Grassroots server sent: ");
+
+
 			if (switching_flag)
 				{
 					Connection *old_connection_p = mw_client_data_p -> qcd_base_data.cd_connection_p;
@@ -1032,6 +1041,10 @@ void MainWindow :: ProcessFetchedServices (json_t *response_p, Connection *conne
 							SetUser (user_p);
 							FreeUser (user_p);
 						}
+				}
+			else
+				{
+
 				}
 
 			mw_prefs_widget_p -> ClearServices ();
@@ -1158,9 +1171,19 @@ bool MainWindow :: SignInWithSingleSignOn (Connection *connection_p, const QStri
 					cookie_ba.append ('\t');
 					cookie_ba.append (cookie.value ());
 
-					if (curl_easy_setopt (curl_p, CURLOPT_COOKIELIST, cookie_ba.constData ()) != CURLE_OK)
+					const char * const cookie_s = cookie_ba.constData ();
+
+
+
+
+					if (curl_easy_setopt (curl_p, CURLOPT_COOKIELIST, cookie_s) == CURLE_OK)
+						{
+							qDebug () << "set CURLOPT_COOKIELIST to \"" << cookie_s << "\"" << Qt :: endl;
+						}
+					else
 						{
 							success_flag = false;
+							qDebug () << "failed to set CURLOPT_COOKIELIST to \"" << cookie_s << "\"" << Qt :: endl;
 						}
 				}
 
