@@ -48,6 +48,15 @@ SSOLoginDialog :: SSOLoginDialog (const QUrl &server_url_r, QWidget *parent_p)
 	sld_location_p = new QLabel (this);
 	sld_location_p -> setTextInteractionFlags (Qt :: TextSelectableByMouse);
 
+
+	/*
+	 * The SSO url can be very long so we need to make sure that
+	 * the dialog doesn't become crazily wide due to the location
+	 * label being massive, so set the size policy.
+	 */
+	sld_location_p -> setSizePolicy (QSizePolicy :: Ignored, QSizePolicy :: Preferred);
+	sld_location_p -> setMinimumWidth (0);
+
 	layout_p -> addWidget (message_p);
 	layout_p -> addWidget (sld_location_p);
 	layout_p -> addWidget (sld_view_p, 1);
@@ -57,7 +66,10 @@ SSOLoginDialog :: SSOLoginDialog (const QUrl &server_url_r, QWidget *parent_p)
 
 	connect (sld_view_p, &QWebEngineView :: urlChanged, this, [this] (const QUrl &url_r)
 		{
-			sld_location_p -> setText (url_r.toDisplayString ());
+			const QString url_s = url_r.toDisplayString ();
+
+			sld_location_p -> setText (url_s);
+			sld_location_p -> setToolTip (url_s);
 		});
 
 
