@@ -5,7 +5,7 @@
 #-------------------------------------------------
 
 
-QT += core network gui networkauth widgets
+QT += core network gui networkauth widgets webenginewidgets
 
 CONFIG += macos app
 
